@@ -1,0 +1,31 @@
+{
+  "source": {
+    "include": [
+
+      "lib/common/Logger.js",
+      "lib/common/MetadataConverterFactory.js",
+      "lib/edmxV20ToJsonV40/index.js",
+      "lib/edmxV40ToJsonV40/index.js",
+      "index.js"
+    ],
+    "exclude": [
+    ]
+  },
+  "opts": {
+    "destination": "_gen/doc/api",
+    "recurse": true,
+    "verbose": true,
+    "pedantic": true,
+    "access": "public,undefined",
+    "readme": "documentation/README.md"
+  },
+  "templates": {
+    "default": {
+      "includeDate": false,
+      "staticFiles": {
+        "include": [
+        ]
+      }
+    }
+  }
+}

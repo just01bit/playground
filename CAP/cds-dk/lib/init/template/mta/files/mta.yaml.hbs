@@ -1,0 +1,191 @@
+## Generated mta.yaml based on template version 0.2.0
+## appName = {{cap.appName}}
+## language={{cap.pLanguage}}; multiTenant={{cap.multiTenant}}
+## approuter={{app.approuter}}
+_schema-version: '3.1'
+ID: {{cap.appId}}
+version: {{cap.appVersion}}
+description: "{{cap.appDescription}}"
+parameters:
+  enable-parallel-deployments: true
+  {{~! app.* context is an experimental feature }}
+  {{#if app.approuter}}tenant-delimiter: "{{app.tenantDelimiter}}" {{/if}}
+{{! New MBT required: call cds build to generate gen/ folder, before doing the actual MTA build}}
+build-parameters:
+  before-all:
+   - builder: custom
+     commands:
+      - npm install
+{{#if (eq cap.pLanguage 'nodejs')}}
+      - npx cds build\/all
+{{/if}}
+
+{{! This template creates one or two deployable modules:
+    Java project, non-multitenant:    Java server module + Node.js hdi deployer module
+    Java project, multitenant:        Java server module + Node.js cds-mtx module
+    Node.js project, non-multitenant: Node.js server module + Node.js hdi deployer module
+    Node.js project, multitenant:     Node.js server module including cds-mtx }}
+modules:
+ # --------------------- SERVER MODULE ------------------------
+ - name: {{cap.appName}}-srv
+ # ------------------------------------------------------------
+   type: {{cap.pLanguage}}
+   path: {{cap.srvPath}}
+   properties:
+     EXIT: 1  # required by deploy.js task to terminate {{! not used yet but leave it in to have at least one property}}
+{{#if cap.multiTenant}}
+     SAP_JWT_TRUST_ACL: [{"clientid":"*","identityzone":"sap-provisioning"}]  # Trust between server and SaaS Manager
+{{/if}}
+{{#if (eq cap.pLanguage 'java')}}
+   build-parameters:
+      builder: custom
+      commands: [ mvn clean package ]
+      build-result: "target/*.[wj]ar"
+{{/if}}
+{{#if (gt cap.requires.length 0) }}
+   requires:
+{{#if (and (eq cap.pLanguage 'java') (eq cap.multiTenant true) ) }}
+    - name: mtx-binding      # mtx sidecar binding
+      properties:
+        CDS_MTX_SDC_URL: ~{mtx-url}
+{{/if}}
+    # Resources extracted from CAP configuration
+{{#each cap.requires}}
+    - name: {{resource.name}}
+{{#if (and (eq ../cap.pLanguage 'java') (or (eq resource.service 'hana') (eq resource.service 'managed-hana') ) ) }}
+      properties:
+{{! Buildpack configuration for service sdk. Different for new Java stack/Spring? }}
+        JBP_CONFIG_RESOURCE_CONFIGURATION: '[tomcat/webapps/ROOT/META-INF/context.xml: {"service_name_for_DefaultDB" : "~{hdi-service-name}"}]'
+{{/if}}
+{{/each}}
+   provides:
+    - name: srv-binding      # required by consumers of CAP services (e.g. approuter)
+      properties:
+        srv-url: ${default-url}
+{{#if (and (eq cap.pLanguage 'nodejs') (eq cap.multiTenant true) ) }}
+    - name: mtx-binding      # potentially required by approuter
+      properties:
+        mtx-url: ${default-url}
+{{/if}}
+{{/if}}
+
+{{#if (and (gt cap.db.length 0) (or (eq cap.pLanguage 'java') (ne cap.multiTenant true) ) ) }}
+ # -------------------- SIDECAR MODULE ------------------------
+ - name: db
+ # ------------------------------------------------------------
+{{#if (eq cap.multiTenant true) }} {{! --> we need cap.db.[i].multiTenant}}
+   type: nodejs
+{{else}}
+   type: hdb
+{{/if}}
+   path: {{cap.db.[0].dbPath}}  {{! Only consider one module for now }}
+   parameters:
+     app-name: {{cap.appName}}-db  {{! change to cap.db.[0].dbName }}
+{{#if (gt cap.requires.length 0) }}
+   requires:
+    # 'hana' and 'xsuaa' resources extracted from CAP configuration
+{{#each cap.requires}}
+{{#if (or (eq resource.service 'hana')(eq resource.service 'managed-hana') (eq resource.service 'xsuaa') )}}
+    - name: {{resource.name}}
+{{/if}}
+{{/each}}
+{{/if}}
+{{#if (eq cap.pLanguage 'java')}}
+   provides:
+    - name: mtx-binding      # required by java server and potentially approuter
+      properties:
+        mtx-url: ${default-url}
+   build-parameters:
+     requires:
+       - name: {{cap.appName}}-srv
+{{/if}}
+{{/if}}
+
+ {{#if app.approuter}}
+ # ---------------------- APPROUTER ---------------------------
+ - name: {{cap.appName}}
+ # ------------------------------------------------------------
+   type: approuter.nodejs
+   path: {{cap.appPath}}     # from cds.env.folders. Consider also cds.env.build.target --> gen/app
+   parameters:
+     disk-quota: 256M        # default in Web IDE
+     memory: 256M            # default in Web IDE
+     hosts:                  # additional tenant specific hostnames (only for Canary)
+      ## the developer will do this via an extension descriptor:
+      # - <paas-subdomain >${tenant-delimiter}${host}
+      # - <saas-subdomain1>${tenant-delimiter}${host}
+      # - ...
+   properties:
+     TENANT_HOST_PATTERN: ^(.*)${tenant-delimiter}${default-uri}  # only relevant for multiTenant
+   requires:
+    - name: uaa              # binding to uaa
+    - name: srv-binding      # binding to srv module
+      group: destinations
+      properties:
+        name: srv-api        # this is a name which must be used in xs-app.json as well !!!
+        url: ~{srv-url}
+        forwardAuthToken: true
+    - name: mtx-binding      # in here always, but really used only if mtx client is used (our recommendation is that they contact cds-mtx via the approuter)
+      group: destinations
+      properties:
+        name: mtx-api        # this is a name which must be used in xs-app.json as well !!!
+        url: ~{mtx-url}
+ {{/if}}
+
+{{#if (gt cap.requires.length 0) }}
+resources:
+ # services extracted from CAP configuration
+ # 'service-plan' can be configured via 'cds.requires.<name>.vcap.plan'
+{{#each cap.requires}}
+# ------------------------------------------------------------
+ - name: {{resource.name}}
+# ------------------------------------------------------------
+{{#if (eq resource.service 'hana') }}
+   type: com.sap.xs.hdi-container
+   parameters:
+     service: {{resource.service}}  # or 'hanatrial' on trial landscapes
+     service-plan: hdi-shared
+{{#if resource.vcap.name}}
+     service-name: {{resource.vcap.name}}
+{{/if}}
+   properties:
+     hdi-service-name: ${service-name}
+{{else if (eq resource.service 'managed-hana') }}  {{! enable automatic switching to 'hanatrial' on trial accounts}}
+   type: org.cloudfoundry.managed-service
+   parameters:
+     service: {{resource.service}}
+     service-plan: hdi-shared
+{{#if resource.vcap.name}}
+     service-name: {{resource.vcap.name}}
+{{/if}}
+   properties:
+     hdi-service-name: ${service-name}
+{{else}}
+   type: org.cloudfoundry.managed-service
+   parameters:
+{{#if (eq resource.service 'xsuaa') }}
+     service: xsuaa
+     service-plan: application  {{! This logic might be added to transformation coding. There are cases with two xsuaa}}
+{{#if resource.vcap.name}}
+     service-name: {{resource.vcap.name}}
+{{/if}}
+     config:
+       xsappname: {{../cap.appName}}{{#if ../cap.multiTenant}}-mt{{/if}}-${space}    #  name + space dependency
+       tenant-mode: {{#if ../cap.multiTenant}}shared{{/if}}{{#unless ../cap.multiTenant}}dedicated{{/unless}}
+       ##  path to xs-security.json to add roles and scopes
+       # path: ./xs-security.json
+       ## or inline definition
+       # scopes:
+       # - name: $XSAPPNAME...
+{{else}}
+     service: {{resource.service}}
+     service-plan: {{resource.vcap.plan}}
+{{#if resource.vcap.name}}
+     service-name: {{resource.vcap.name}}
+{{/if}}
+{{/if}}
+{{/if}}
+
+{{/each}}
+{{/if}}
+ {{! consider vcap.tag as well}}
