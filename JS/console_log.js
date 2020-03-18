@@ -1,15 +1,12 @@
-function Person() {
-  // The Person() constructor defines `this` as an instance of itself.
-  this.age = 0;
+var arguments = [1, 2, 3];
+var arr = () => arguments[0];
 
-  setInterval(function growUp() {
-    // In non-strict mode, the growUp() function defines `this`
-    // as the global object (because it's where growUp() is executed.), 
-    // which is different from the `this`
-    // defined by the Person() constructor.
-    var ageNow = this.age++;
-    console.log(this.ageNow);
-  }, 1000);
+arr(); // 1
+
+function foo(n) {
+  var args = arguments;
+  var f = () => arguments[0] + n; // foo's implicit arguments binding. arguments[0] is n
+  return f();
 }
 
-var p = new Person();
+foo(3); // 6

@@ -7,7 +7,9 @@
   "private": true,
   "dependencies": {
     "@sap/cds": "^3",
-    "express": "^4"
+    "@sap/hana-client": "^2.4.182",
+    "express": "^4",
+    "passport": "^0.4.1"
   },
   "scripts": {
     "start": "npx cds run"
@@ -18,10 +20,11 @@
   "cds": {
     "requires": {
       "db": {
-        "kind": "sqlite",
-        "credentials": {
-          "database": "my.db"
-        }
+        "kind": "hana",
+        "model": [
+          "db",
+          "srv"
+        ]
       }
     }
   }
