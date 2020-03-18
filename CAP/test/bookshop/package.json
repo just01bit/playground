@@ -7,9 +7,7 @@
   "private": true,
   "dependencies": {
     "@sap/cds": "^3",
-    "@sap/hana-client": "^2.4.182",
-    "express": "^4",
-    "passport": "^0.4.1"
+    "express": "^4"
   },
   "scripts": {
     "start": "npx cds run"
@@ -20,11 +18,23 @@
   "cds": {
     "requires": {
       "db": {
-        "kind": "hana",
-        "model": [
-          "db",
-          "srv"
-        ]
+        "kind": "sqlite",
+        "credentials": {
+          "database": "my.db"
+        }
+      }
+    },
+    "auth": {
+      "passport": {
+        "strategy": "mock",
+        "users": {
+          "alice": {
+            "roles": [ "admin" ],
+            "ID": "alice@wonder.land",
+            "password": "secret",
+            "userAttributes": { "country": "US" }
+          }
+        }
       }
     }
   }
