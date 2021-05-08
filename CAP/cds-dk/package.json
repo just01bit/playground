@@ -2119,7 +2119,7 @@
     "@sap/cds-sidecar-client": "^1.1.1",
     "@sap/edm-converters": "^1.0.19",
     "express": "4.17.1",
-    "handlebars": "4.7.3",
+    "handlebars": "4.7.7",
     "nodemon": "2.0.2",
     "passport": "0.4.1",
     "sqlite3": "4.0.7",
